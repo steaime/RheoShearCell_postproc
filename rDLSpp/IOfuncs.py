@@ -1,11 +1,21 @@
 import os
 import numpy as np
-import scipy.interpolate as spi
 import logging
-from DSH import SharedFunctions as sf
 
 
-def ReadData(fname, usecols=None, unpack=True, delimiter='\t', **loadtxt_kwargs):
+def ReadRheoData(fname, usecols=(1,2,5), unpack=True, **loadtxt_kwargs):
+    """Reads a text file with output of a rheology experiment
+
+    Parameters
+    ----------
+    fname :     full path of the filename with rheology data
+    usecols :   select the columns that should be read.
+                the file structure is: {#; Time; Position; Speed; Position error; Force}
+                the default parameter (1,2,5) corresponds to reading time, position and force
+    unpack :    if True, it will return each column as a separate 1D array
+                otherwise, it will return a 2D array
+    loadtxt_kwargs : other kwargs to be passed to np.loadtxt
+    """
     if os.path.isfile(fname):
         if usecols is None:
             strlog = 'Reading all columns from file ' + str(fname)
@@ -14,33 +24,11 @@ def ReadData(fname, usecols=None, unpack=True, delimiter='\t', **loadtxt_kwargs)
         if unpack:
             strlog += ' (unpack)'
         logging.info(strlog)
-        return np.loadtxt(fname, delimiter=delimiter, usecols=usecols, unpack=unpack, **loadtxt_kwargs)
+        return np.loadtxt(fname, delimiter='\t', usecols=usecols, unpack=unpack, **loadtxt_kwargs)
     else:
         logging.error('ReadData error: file ' + str(fname) + ' does not exist')
-        return None
+        if unpack and len(usecols)>1:
+            return [None]*len(usecols)
+        else:
+            return None
 
-def LoadForceCalib(FilePath, FitMethod='spline', FitParam=None, return_raw=False):
-    """Loads calibration data for current-force conversion
-
-    Parameters
-    ----------
-    FilePath :  full path of the filename with calibration data
-    FitMethod : {'spline'|'poly'}, method for fitting the raw calibration data
-    FitParam :  float, parameter to pass to fitting method.
-                - for spline fitting, FitParam will be the 's' parameter of the spline fitting
-                  (the smaller s, the larger number of nodes)
-                - for poly fitting, FitParam will be the degree of the polynomial fit
-                  (if None, cubic fitting will be used by default)
-    return_raw: Boolean. If true, return the raw calibration data together with the fit function
-    """
-    off, f = np.loadtxt(FilePath, skiprows=1, unpack=True)
-    if FitMethod=='spline':
-        fitres = spi.UnivariateSpline(off, f, s=FitParam)
-    elif FitMethod=='poly':
-        if FitParam is None:
-            FitParam = 3
-        fitres = np.poly1d(np.polyfit(off, f, FitParam))
-    if return_raw:
-        return fitres, [off, f]
-    else:
-        return fitres
