@@ -357,7 +357,10 @@ class RheoInterval():
                                                 amplitude=cur_amp, period=cur_period, offset=self.offset, reptimes=1))
         elif (self.type == 'STEP_RATE'):
             for j in range(self.reptimes):
-                cur_fname = self.namebase + '_' + str(j).zfill(4)
+                if (self.reptimes > 1):
+                    cur_fname = self.namebase + '_' + str(j).zfill(4)
+                else:
+                    cur_fname = self.namebase
                 cur_fname_asc = cur_fname
                 if self.twoways:
                     cur_fname_asc += '_ASC'
@@ -371,7 +374,11 @@ class RheoInterval():
             for j in range(self.reptimes):
                 for i in range(len(all_rates)):
                     for k in range(self.runsperrate):
-                        cur_fname = self.namebase + '_' + str(i).zfill(3) + chr(j+97) + '_' + str(k).zfill(4)
+                        if (self.reptimes > 1):
+                            cur_fname = self.namebase + '_' + str(i).zfill(3) + chr(j+97)
+                        else:
+                            cur_fname = self.namebase 
+                        cur_fname += '_' + str(k).zfill(4)
                         res.append(RheoInterval('STEP_RATE', namebase=self.namebase, filename=cur_fname+'_ASC'+fext, rate=all_rates[i], strain=self.strain, 
                                                 twoways=False, offset=self.offset, reptimes=1))
                         res.append(RheoInterval('STEP_RATE', namebase=self.namebase, filename=cur_fname+'_DESC'+fext, rate=all_rates[i], 

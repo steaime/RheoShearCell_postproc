@@ -2,6 +2,7 @@ import copy
 import configparser
 import numpy as np
 from rDLSpp import IOfuncs as iof
+from rDLSpp import RheoCorr as rhc
 
 """
 Parameters:
@@ -11,9 +12,9 @@ Parameters:
 - StartTime:      float, where to start the analysis, in units of the period.
 - AnalyzePeriods: int, number of periods to analyze
 - FreqRecord:     int, how many datapoints per second. If none, it will be calculated automatically
-- ForceCorrection:function or None
+- ForceCorrection:RheoCorr.ForceCorrection or None
 """
-def FTanalysisRheology(fname, Period=1.0, StartTime=1.0, AnalyzePeriods=1, FreqRecord=None, StaticForceCorr=None, CurrentForceCorr=None, verbose=0, savefile_suf=None):
+def FTanalysisRheology(fname, Period=1.0, StartTime=1.0, AnalyzePeriods=1, FreqRecord=None, ForceCorrection=None, verbose=0):
     # Period: Oscillation period, in seconds
     # FreqRecord: How many points per second
     ManualTimeDelay_sec = 0.0 # Eventually, consider a time delay between force and position readings
@@ -21,18 +22,8 @@ def FTanalysisRheology(fname, Period=1.0, StartTime=1.0, AnalyzePeriods=1, FreqR
     # Load information on Rheodiff profiles
     # Also load raw data if different resampled profiles were saved on the same output file.
     t_list, x_list, f_list = iof.ReadRheoData(fname)
-    if savefile_suf is not None:
-        f_list_raw = copy.deepcopy(f_list)
-    if StaticForceCorr is not None:
-        f_static = StaticForceCorr(x_list)
-        f_list -= f_static
-    elif savefile_suf is not None:
-        f_static = np.zeros_like(f_list)
-    if CurrentForceCorr is not None:
-        f_currFactor = CurrentForceCorr(x_list)
-        f_list /= f_currFactor
-    elif savefile_suf is not None:
-        f_currFactor = np.ones_like(f_list)
+    if ForceCorrection is not None:
+        ForceCorrection.Correct(f_list, x_list, inplace=True)
     
     if FreqRecord is None:
         FreqRecord = 1000.0 / (t_list[1] - t_list[0])
@@ -78,75 +69,4 @@ def FTanalysisRheology(fname, Period=1.0, StartTime=1.0, AnalyzePeriods=1, FreqR
         print('  k_imag  = ' + str(np.imag(G_FirstHarm)) + ' N/mm')
         print('  tandelta= ' + str(np.tan(np.angle(G_FirstHarm))) + ' N/mm')
         
-    if savefile_suf is not None:
-        np.savetxt(fname[:-4] + savefile_suf + fname[-4:], np.column_stack((t_list-t_list[0], x_list, f_list_raw, f_static, f_currFactor, f_list)), delimiter='\t', header='t[ms]\tpos[mm]\tFraw[N]\tFstatic[N]\tFIconversion\tFcorr[N]')
-    
-    return ForceFFT_FirstHarm, PositionFFT_FirstHarm, G_FirstHarm, AvgForce
-
-
-'''
-Returns: list of file specs, in the form [res_filename, amplitude, period, offset]
-'''
-def ReadConfig(fname, fext='.txt'):
-    res = []
-    
-    config = configparser.ConfigParser(inline_comment_prefixes=";")
-    config.read(fname)
-    
-    for i in range(1, len(config.sections())):
-        strsec = 'MEASURE' + str(i)
-        if strsec in config.sections():
-            cur_type = config.get(strsec, 'Type', fallback='')
-            if cur_type == 'OSCILL_POS':
-                cur_name = str(i).zfill(2) + '_' + config[strsec]['Name'] + '.txt'
-                cur_amp = config.getfloat(strsec, 'Amplitude', fallback=-1.0)
-                cur_period = config.getfloat(strsec, 'Period', fallback=-1.0)
-                cur_offset = config.getfloat(strsec, 'Offset', fallback=-1.0)
-                cur_reptimes = config.getint(strsec, 'RepeatTimes', fallback=1)
-                res.append([cur_name, cur_amp, cur_period, cur_offset])
-            elif cur_type == 'SWEEP_FREQ':
-                cur_namebase = str(i).zfill(2) + '_' + config[strsec]['Name']
-                cur_reptimes = config.getint(strsec, 'RepeatTimes', fallback=1)
-                cur_amp = config.getfloat(strsec, 'Amplitude', fallback=-1.0)
-                cur_offset = config.getfloat(strsec, 'Offset', fallback=-1.0)
-                cur_ppd = int(config.getfloat(strsec, 'PointsPerDecade', fallback=0.0))
-                min_freq = config.getfloat(strsec, 'MinFreq', fallback=-1.0)
-                max_freq = config.getfloat(strsec, 'MaxFreq', fallback=-1.0)
-                num_freq = int(np.ceil(cur_ppd * np.log10(max_freq / min_freq)) + 1)
-                cur_sort = config.get(strsec, 'FreqSort', fallback='ASC')
-                if cur_sort=='ASC':
-                    inc_sign = 1.0
-                    start_freq = min_freq
-                else:
-                    inc_sign = -1.0
-                    start_freq = max_freq
-                for j in range(cur_reptimes):
-                    for i in range(num_freq):
-                        cur_freq = start_freq * np.power(10, i * inc_sign / cur_ppd)
-                        cur_period = 2*np.pi/cur_freq
-                        res.append([cur_namebase + '_' + str(i).zfill(3) + chr(j+97) + fext, cur_amp, cur_period, cur_offset])
-            elif cur_type == 'SWEEP_STRAIN':
-                cur_namebase = str(i).zfill(2) + '_' + config[strsec]['Name']
-                cur_reptimes = config.getint(strsec, 'RepeatTimes', fallback=1)
-                cur_freq = config.getfloat(strsec, 'AngularFrequency', fallback=-1.0)
-                cur_period = 2*np.pi/cur_freq
-                cur_offset = config.getfloat(strsec, 'Offset', fallback=-1.0)
-                cur_ppd = int(config.getfloat(strsec, 'PointsPerDecade', fallback=0.0))
-                min_amp = config.getfloat(strsec, 'MinAmplitude', fallback=-1.0)
-                max_amp = config.getfloat(strsec, 'MaxAmplitude', fallback=-1.0)
-                num_amps = int(np.ceil(cur_ppd * np.log10(max_amp / min_amp)) + 1)
-                cur_sort = config.get(strsec, 'AmpSort', fallback='ASC')
-                if cur_sort=='ASC':
-                    inc_sign = 1.0
-                    start_amp = min_amp
-                else:
-                    inc_sign = -1.0
-                    start_amp = max_amp
-                for j in range(cur_reptimes):
-                    for i in range(num_amps):
-                        cur_amp = start_amp * np.power(10, i * inc_sign / cur_ppd)
-                        res.append([cur_namebase + '_' + str(i).zfill(3) + chr(j+97) + fext, cur_amp, cur_period, cur_offset])
-            else:
-                print('unknown measure type ' + str(config[strsec]['Type']) + ' in section ' + str(strsec))
-    
-    return res
+    return G_FirstHarm, {'F': ForceFFT_FirstHarm, 'x': PositionFFT_FirstHarm, 'F0': AvgForce}
