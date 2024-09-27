@@ -115,17 +115,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-DLS_tutorial2_corrmaps_000ASC.ipynb
-DLS_tutorial2_corrmaps_001ASC.ipynb
-DLS_tutorial2_corrmaps_003ASC.ipynb
-DLS_tutorial2_corrmaps_005ASC.ipynb
-DLS_tutorial2_corrmaps_007ASC.ipynb
-DLS_tutorial2_corrmaps_009ASC.ipynb
-DLS_tutorial2_corrmaps_SS000.ipynb
-DLS_tutorial2_corrmaps_SS003.ipynb
-DLS_tutorial2_corrmaps_SS006.ipynb
-DLS_tutorial2_corrmaps_SS009.ipynb
-tutorial2_ForceCorrection - Copy.ipynb
-DataAnalysis_220113.ipynb
-
-DSH_bypass
+AnalysisNotebooks

@@ -61,7 +61,8 @@ class RheoProtocol():
         if self.upacked_intervals is None:
             self.upacked_intervals = []
             for cur_int in self.intervals:
-                self.upacked_intervals += cur_int.unpackIntervals(self.fext)
+                if cur_int.active:
+                    self.upacked_intervals += cur_int.unpackIntervals(self.fext)
         return self.upacked_intervals
 
     def CountIntervals(self, unpacked=True, check_explog=False):
@@ -70,7 +71,7 @@ class RheoProtocol():
             if check_explog and self.explogdata is not None:
                 logrows = self.explogdata.shape[0]
                 if logrows != res:
-                    logging.warn('RheoConfig has ' + str(res) + ' unpacked intervals generated from config file ' + str(self.config_fname) +\
+                    logging.warning('RheoConfig has ' + str(res) + ' unpacked intervals generated from config file ' + str(self.config_fname) +\
                                  ' and ' + str(logrows) + ' rows in expLog file ' + str(self.explog_fname))
                     return min(res, logrows)
             return res
@@ -144,8 +145,9 @@ class RheoProtocol():
         self.outfolder = config.get('EXPERIMENT', 'OutFolder', fallback='')
         
         for i in range(1, len(config.sections())):
-            strsec = 'MEASURE' + str(i)
+            strsec = 'INTERVAL' + str(i)
             if strsec in config.sections():
+                cur_active = config.getboolean(strsec, 'Active', fallback=1)
                 cur_type = config.get(strsec, 'Type', fallback='')
                 if cur_type == 'OSCILL_POS':
                     cur_name = str(i).zfill(2) + '_' + config[strsec]['Name']
@@ -153,7 +155,7 @@ class RheoProtocol():
                     cur_period = config.getfloat(strsec, 'Period', fallback=-1.0)
                     cur_offset = config.getfloat(strsec, 'Offset', fallback=-1.0)
                     cur_reptimes = config.getint(strsec, 'RepeatTimes', fallback=1)
-                    self.intervals.append(RheoInterval(cur_type, filename=cur_name, amplitude=cur_amp, period=cur_period, 
+                    self.intervals.append(RheoInterval(cur_type, Active=cur_active, filename=cur_name, amplitude=cur_amp, period=cur_period, 
                                                 offset=cur_offset, reptimes=cur_reptimes))
                 elif cur_type == 'SWEEP_FREQ':
                     cur_namebase = str(i).zfill(2) + '_' + config[strsec]['Name']
@@ -164,7 +166,7 @@ class RheoProtocol():
                     min_freq = config.getfloat(strsec, 'MinFreq', fallback=-1.0)
                     max_freq = config.getfloat(strsec, 'MaxFreq', fallback=-1.0)
                     cur_sort = config.get(strsec, 'FreqSort', fallback='ASC')
-                    self.intervals.append(RheoInterval(cur_type, namebase=cur_namebase, amplitude=cur_amp, 
+                    self.intervals.append(RheoInterval(cur_type, Active=cur_active, namebase=cur_namebase, amplitude=cur_amp, 
                                                         minfreq=min_freq, maxfreq=max_freq, ppd=cur_ppd, sort=cur_sort, 
                                                         offset=cur_offset, reptimes=cur_reptimes))
 
@@ -178,7 +180,7 @@ class RheoProtocol():
                     min_amp = config.getfloat(strsec, 'MinAmplitude', fallback=-1.0)
                     max_amp = config.getfloat(strsec, 'MaxAmplitude', fallback=-1.0)
                     cur_sort = config.get(strsec, 'AmpSort', fallback='ASC')
-                    self.intervals.append(RheoInterval(cur_type, namebase=cur_namebase, freq=cur_freq, 
+                    self.intervals.append(RheoInterval(cur_type, Active=cur_active, namebase=cur_namebase, freq=cur_freq, 
                                                         minamp=min_amp, maxamp=max_amp, ppd=cur_ppd, sort=cur_sort, 
                                                         offset=cur_offset, reptimes=cur_reptimes))
 
@@ -189,7 +191,7 @@ class RheoProtocol():
                     cur_offset = config.getfloat(strsec, 'Offset', fallback=-1.0)
                     cur_reptimes = config.getint(strsec, 'RepeatTimes', fallback=1)
                     cur_revafter = config.getboolean(strsec, 'ReverseAfter', fallback=1)
-                    self.intervals.append(RheoInterval(cur_type, namebase=cur_name, rate=cur_rate, strain=cur_totstrain, 
+                    self.intervals.append(RheoInterval(cur_type, Active=cur_active, namebase=cur_name, rate=cur_rate, strain=cur_totstrain, 
                                                 twoways=cur_revafter, offset=cur_offset, reptimes=cur_reptimes))
 
                 elif cur_type == 'SWEEP_RATE':
@@ -202,7 +204,7 @@ class RheoProtocol():
                     cur_totstrain = config.getfloat(strsec, 'TotalStrain', fallback=-1.0)
                     cur_offset = config.getfloat(strsec, 'Offset', fallback=-1.0)
                     cur_reptimes = config.getint(strsec, 'RepeatTimes', fallback=1)
-                    self.intervals.append(RheoInterval(cur_type, namebase=cur_name, minrate=cur_minrate, maxrate=cur_maxrate, ppd=cur_ppd, 
+                    self.intervals.append(RheoInterval(cur_type, Active=cur_active, namebase=cur_name, minrate=cur_minrate, maxrate=cur_maxrate, ppd=cur_ppd, 
                                                         sort=cur_sort, strain=cur_totstrain, runsperrate=cur_runsperrate, offset=cur_offset, reptimes=cur_reptimes))
                 else:
                     logging.error('unknown measure type ' + str(config[strsec]['Type']) + ' in section ' + str(strsec))
@@ -210,8 +212,9 @@ class RheoProtocol():
 class RheoInterval():
     """ Bundles rheo interval properties """
 
-    def __init__(self, IntervalType=None, **kwdict):
+    def __init__(self, IntervalType=None, Active=1, **kwdict):
         self.type = IntervalType
+        self.active = Active
         if (IntervalType == 'OSCILL_POS'):
             self._init_oscillPos(**kwdict)
         elif (IntervalType == 'SWEEP_FREQ'):
@@ -293,25 +296,26 @@ class RheoInterval():
 
     def Copy(self):
         if (self.type == 'OSCILL_POS'):
-            return RheoInterval(self.type, namebase=self.namebase, filename=self.filename, amplitude=self.amplitude, 
+            return RheoInterval(self.type, self.active, namebase=self.namebase, filename=self.filename, amplitude=self.amplitude, 
                                 period=self.period, offset=self.offset, reptimes=self.reptimes)
         elif (self.type == 'SWEEP_FREQ'):
-            return RheoInterval(self.type, namebase=self.namebase, amplitude=self.amplitude, minfreq=self.minfreq, 
+            return RheoInterval(self.type, self.active, namebase=self.namebase, amplitude=self.amplitude, minfreq=self.minfreq, 
                                 maxfreq=self.maxfreq, ppd=self.ppd, sort=self.sort, offset=self.offset, reptimes=self.reptimes)
         elif (self.type == 'SWEEP_STRAIN'):
-            return RheoInterval(self.type, namebase=self.namebase, freq=self.freq, minamp=self.minamp, 
+            return RheoInterval(self.type, self.active, namebase=self.namebase, freq=self.freq, minamp=self.minamp, 
                                 maxamp=self.maxamp, ppd=self.ppd, sort=self.sort, offset=self.offset, reptimes=self.reptimes)
         elif (self.type == 'STEP_RATE'):
-            return RheoInterval(self.type, namebase=self.namebase, filename=self.filename, rate=self.rate, strain=self.strain, 
+            return RheoInterval(self.type, self.active, namebase=self.namebase, filename=self.filename, rate=self.rate, strain=self.strain, 
                                 twoways=self.twoways, offset=self.offset, reptimes=self.reptimes)
         elif (self.type == 'SWEEP_RATE'):
-            return RheoInterval(self.type, namebase=self.namebase, minrate=self.minrate, maxrate=self.maxrate, ppd=self.ppd, 
+            return RheoInterval(self.type, self.active, namebase=self.namebase, minrate=self.minrate, maxrate=self.maxrate, ppd=self.ppd, 
                                 sort=self.sort, strain=self.strain, runsperrate=self.runsperrate, offset=self.offset, reptimes=self.reptimes)
         else:
             raise ValueError('Unable to copy interval of type ' + str(self.type))
 
     def __repr__(self):
-        return '<RheoInterval: ' + str(self.type) + ' (' + self.name + ')>'
+        str_res = '<RheoInterval: ' + str(self.type) + ' (' + self.name + ')'
+        return str_res + '>'
     
     def __str__(self):
         return '<RheoInterval: ' + self.ToString() + '>'
@@ -331,6 +335,8 @@ class RheoInterval():
         elif (self.type == 'SWEEP_RATE'):
             str_res += 'v=[' + str(self.minrate) + ',' + str(self.maxrate) + ']; ' + str(self.numrates) + ' pts ' + str(self.sort) + '; ' + str(self.runsperrate) + ' runs'
         str_res += '; off=' + str(self.offset) + '; rep ' + str(self.reptimes) + 'x'
+        if not self.active:
+            str_res += '; DISABLED'
         return str_res
 
     def unpackIntervals(self, fext='.txt'):

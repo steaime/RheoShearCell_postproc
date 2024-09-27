@@ -14,14 +14,14 @@ Parameters:
 - FreqRecord:     int, how many datapoints per second. If none, it will be calculated automatically
 - ForceCorrection:RheoCorr.ForceCorrection or None
 """
-def FTanalysisRheology(fname, Period=1.0, StartTime=1.0, AnalyzePeriods=1, FreqRecord=None, ForceCorrection=None, verbose=0):
+def FTanalysisRheology(fname, Period=1.0, StartTime=1.0, AnalyzePeriods=1, FreqRecord=None, ForceCorrection=None, verbose=0, usecols=(1,2,6), **loadtxt_kwargs):
     # Period: Oscillation period, in seconds
     # FreqRecord: How many points per second
     ManualTimeDelay_sec = 0.0 # Eventually, consider a time delay between force and position readings
 
     # Load information on Rheodiff profiles
     # Also load raw data if different resampled profiles were saved on the same output file.
-    t_list, x_list, f_list = iof.ReadRheoData(fname)
+    t_list, x_list, f_list = iof.ReadRheoData(fname, usecols, unpack=True, **loadtxt_kwargs)
     if ForceCorrection is not None:
         ForceCorrection.Correct(f_list, x_list, inplace=True)
     

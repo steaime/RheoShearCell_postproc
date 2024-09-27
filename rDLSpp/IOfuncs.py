@@ -3,7 +3,7 @@ import numpy as np
 import logging
 
 
-def ReadRheoData(fname, usecols=(1,2,5), unpack=True, **loadtxt_kwargs):
+def ReadRheoData(fname, usecols=(1,2,6), unpack=True, **loadtxt_kwargs):
     """Reads a text file with output of a rheology experiment
 
     Parameters
