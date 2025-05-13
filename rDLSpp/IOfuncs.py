@@ -23,7 +23,7 @@ def ReadRheoData(fname, usecols=(1,2,6), unpack=True, **loadtxt_kwargs):
             strlog = 'Reading columns ' + str(usecols) + ' from file ' + str(fname)
         if unpack:
             strlog += ' (unpack)'
-        logging.info(strlog)
+        logging.debug(strlog)
         return np.loadtxt(fname, delimiter='\t', usecols=usecols, unpack=unpack, **loadtxt_kwargs)
     else:
         logging.error('ReadData error: file ' + str(fname) + ' does not exist')
@@ -32,3 +32,4 @@ def ReadRheoData(fname, usecols=(1,2,6), unpack=True, **loadtxt_kwargs):
         else:
             return None
 
+    
