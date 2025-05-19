@@ -9,6 +9,7 @@ RC_INTERVAL_IDLEN = 3
 RC_INTERVAL_REPLEN = 4
 RC_INTSUFFIX_POS = 'POS'
 RC_INTSUFFIX_NEG = 'NEG'
+RC_INTTYPES = {}
 
 def BuildSweep(minval, maxval, ppd, sort_type):
     numvals = int(np.ceil(ppd * np.log10(maxval / minval)) + 1)
@@ -22,6 +23,16 @@ def BuildSweep(minval, maxval, ppd, sort_type):
         res += unique_vals[::-1]
     if (sort_type == 'DESCASC'):
         res += unique_vals
+    return res
+
+def GetIntervalFilenames(int_list, froot, hide_disabled=True):
+    res = []
+    for i, cur_int in enumerate(int_list):
+        if cur_int.filename is None:
+            logging.error('Unpacked RheoInterval #' + str(i) + ' has no filename associated (namebase: ' + str(cur_int.namebase) + ')')
+        else:
+            if cur_int.active or hide_disabled==False:
+                res.append(os.path.join(froot, cur_int.filename))
     return res
 
 
@@ -83,18 +94,33 @@ class RheoProtocol():
             return res
         else:
             return len(self.intervals)
+        
+    def FilterIntervals(self, filter_params={}, unpacked=True):
+        res = []
+        if unpacked:
+            int_list = self.UnpackedIntervals()
+        else:
+            int_list = self.intervals
+        for cur_int in int_list:
+            do_add = True
+            if do_add and 'type' in filter_params:
+                do_add = cur_int.type == filter_params['type']
+            if do_add and 'axID' in filter_params:
+                do_add = cur_int.axID == filter_params['axID']
+            if do_add and 'active' in filter_params:
+                do_add = cur_int.active == filter_params['active']
+            if do_add and 'name_contains' in filter_params:
+                do_add = filter_params['name_contains'] in cur_int.filename
+            if do_add and 'hasOSR' in filter_params:
+                do_add = cur_int.HasOSR() == filter_params['hasOSR']
+            if do_add:
+                res.append(cur_int)
+        return res
 
     def GetFullFilenames(self, use_froot=None, hide_disabled=True):
         if use_froot is None:
             use_froot = self.config_folder
-        res = []
-        for i, cur_int in enumerate(self.UnpackedIntervals()):
-            if cur_int.filename is None:
-                logging.error('Unpacked RheoInterval #' + str(i) + ' has no filename associated (namebase: ' + str(cur_int.namebase) + ')')
-            else:
-                if cur_int.active or hide_disabled==False:
-                    res.append(os.path.join(use_froot, cur_int.filename))
-        return res
+        return GetIntervalFilenames(self.UnpackedIntervals(), use_froot, hide_disabled=hide_disabled)
     
     def LoadExpLog(self, fname=None, fheadersep='------------------------', force_reload=False):
         if force_reload or self.explogdata is None:
@@ -194,7 +220,15 @@ class RheoProtocol():
                         self.intervals.append(RheoInterval(cur_type, AxID=cur_ax, Active=cur_active, OSR=cur_osr, namebase=cur_name, freq=cur_freq, 
                                                             minamp=min_amp, maxamp=max_amp, ppd=cur_ppd, sort=cur_sort, 
                                                             offset=cur_offset, reptimes=cur_reptimes))
-
+                    elif cur_type == 'SWEEP_STRESS':
+                        cur_freq = config.getfloat(strsec, 'AngularFrequency', fallback=-1.0)
+                        cur_period = 2*np.pi/cur_freq
+                        cur_ppd = int(config.getfloat(strsec, 'PointsPerDecade', fallback=0.0))
+                        min_amp = config.getfloat(strsec, 'MinAmplitude', fallback=-1.0)
+                        max_amp = config.getfloat(strsec, 'MaxAmplitude', fallback=-1.0)
+                        cur_sort = config.get(strsec, 'AmpSort', fallback='ASC')
+                        self.intervals.append(RheoInterval(cur_type, AxID=cur_ax, Active=cur_active, OSR=cur_osr, namebase=cur_name, freq=cur_freq, 
+                                                            minamp=min_amp, maxamp=max_amp, ppd=cur_ppd, sort=cur_sort, reptimes=cur_reptimes))
                     elif cur_type == 'STEP_RATE':
                         cur_rate = config.getfloat(strsec, 'ShearRate', fallback=-1.0)
                         cur_totstrain = config.getfloat(strsec, 'TotalStrain', fallback=-1.0)
@@ -222,6 +256,16 @@ class RheoProtocol():
                         cur_revafter = config.getboolean(strsec, 'ReverseAfter', fallback=1)
                         self.intervals.append(RheoInterval(cur_type, AxID=cur_ax, OSR=cur_osr, namebase=cur_name, amplitude=cur_amp, 
                                                            duration=cur_dur, twoways=cur_revafter, offset=cur_offset, reptimes=cur_reptimes))
+                    elif cur_type == 'STEP_FORCE':
+                        cur_amp = config.getfloat(strsec, 'Amplitude', fallback=0.0)
+                        cur_dur = config.getfloat(strsec, 'Duration', fallback=0.0)
+                        cur_stept = config.getfloat(strsec, 'StepTime', fallback=0.0)
+                        cur_maxx = config.getfloat(strsec, 'MaxStrain', fallback=0.0)
+                        cur_rampt = config.getfloat(strsec, 'RampTime', fallback=-1.0)
+                        cur_rect = config.getfloat(strsec, 'RecoveryTime', fallback=0.0)
+                        cur_revafter = config.getboolean(strsec, 'ReverseAfter', fallback=1)
+                        self.intervals.append(RheoInterval(cur_type, AxID=cur_ax, OSR=cur_osr, namebase=cur_name, amplitude=cur_amp, 
+                                                           duration=cur_dur, steptime=cur_stept, rectime=cur_rect, twoways=cur_revafter, reptimes=cur_reptimes))
                         
                     else:
                         logging.error('unknown measure type ' + str(config[strsec]['Type']) + ' in section ' + str(strsec))
@@ -236,16 +280,22 @@ class RheoInterval():
         self.OSR = OSR
         if (IntervalType == 'OSCILL_POS'):
             self._init_oscillPos(**kwdict)
+        elif (IntervalType == 'OSCILL_FORCE'):
+            self._init_oscillStress(**kwdict)
         elif (IntervalType == 'SWEEP_FREQ'):
             self._init_DFS(**kwdict)
         elif (IntervalType == 'SWEEP_STRAIN'):
             self._init_DSS(**kwdict)
+        elif (IntervalType == 'SWEEP_STRESS'):
+            self._init_StressSweep(**kwdict)
         elif (IntervalType == 'STEP_RATE'):
             self._init_stepRate(**kwdict)
         elif (IntervalType == 'SWEEP_RATE'):
             self._init_rateSweep(**kwdict)
         elif (IntervalType == 'STEP_POS'):
             self._init_stepPos(**kwdict)
+        elif (IntervalType == 'STEP_FORCE'):
+            self._init_stepForce(**kwdict)
         else:
             raise ValueError('RheoInterval type ' + str(self.type) + ' not recognized')
 
@@ -262,7 +312,17 @@ class RheoInterval():
         self.period = period
         self.offset = offset
         self.reptimes = reptimes
-
+    def _init_oscillStress(self, amplitude, period, reptimes, namebase=None, filename=None):
+        self.filename = filename
+        if filename is not None:
+            self.namebase = filename
+            self.name = filename
+        else:
+            self.namebase = namebase
+            self.name = namebase
+        self.amplitude = amplitude
+        self.period = period
+        self.reptimes = reptimes
     def _init_DFS(self, namebase, amplitude, minfreq, maxfreq, ppd, sort, offset, reptimes):
         self.namebase = namebase
         self.amplitude = amplitude
@@ -284,6 +344,17 @@ class RheoInterval():
         self.numamps = int(np.ceil(ppd * np.log10(maxamp / minamp)) + 1)
         self.sort = sort
         self.offset = offset
+        self.reptimes = reptimes
+        self.name = self.namebase
+        
+    def _init_StressSweep(self, namebase, freq, minamp, maxamp, ppd, sort, reptimes):
+        self.namebase = namebase
+        self.freq = freq
+        self.minamp = minamp
+        self.maxamp = maxamp
+        self.ppd = ppd
+        self.numamps = int(np.ceil(ppd * np.log10(maxamp / minamp)) + 1)
+        self.sort = sort
         self.reptimes = reptimes
         self.name = self.namebase
 
@@ -328,17 +399,41 @@ class RheoInterval():
         self.offset = offset
         self.reptimes = reptimes
         self.twoways = twoways
+        
+    def _init_stepForce(self, amplitude, duration, twoways, reptimes, steptime, rectime, namebase=None, filename=None):
+        self.filename = filename
+        if filename is not None:
+            self.namebase = filename
+            self.name = filename
+        else:
+            self.namebase = namebase
+            self.name = namebase
+        self.amplitude = amplitude
+        self.duration = duration
+        self.reptimes = reptimes
+        self.twoways = twoways
+        self.steptime = steptime
+        self.recoverytime = rectime
+        
+    def HasOSR(self):
+        return self.OSR is not None
 
     def Copy(self):
         if (self.type == 'OSCILL_POS'):
             return RheoInterval(self.type, self.active, namebase=self.namebase, filename=self.filename, amplitude=self.amplitude, 
                                 period=self.period, offset=self.offset, reptimes=self.reptimes)
+        elif (self.type == 'OSCILL_FORCE'):
+            return RheoInterval(self.type, self.active, namebase=self.namebase, filename=self.filename, amplitude=self.amplitude, 
+                                period=self.period, reptimes=self.reptimes)
         elif (self.type == 'SWEEP_FREQ'):
             return RheoInterval(self.type, self.active, namebase=self.namebase, amplitude=self.amplitude, minfreq=self.minfreq, 
                                 maxfreq=self.maxfreq, ppd=self.ppd, sort=self.sort, offset=self.offset, reptimes=self.reptimes)
         elif (self.type == 'SWEEP_STRAIN'):
             return RheoInterval(self.type, self.active, namebase=self.namebase, freq=self.freq, minamp=self.minamp, 
                                 maxamp=self.maxamp, ppd=self.ppd, sort=self.sort, offset=self.offset, reptimes=self.reptimes)
+        elif (self.type == 'SWEEP_STRESS'):
+            return RheoInterval(self.type, self.active, namebase=self.namebase, freq=self.freq, minamp=self.minamp, 
+                                maxamp=self.maxamp, ppd=self.ppd, sort=self.sort, reptimes=self.reptimes)
         elif (self.type == 'STEP_RATE'):
             return RheoInterval(self.type, self.active, namebase=self.namebase, filename=self.filename, rate=self.rate, strain=self.strain, 
                                 twoways=self.twoways, offset=self.offset, reptimes=self.reptimes)
@@ -359,9 +454,13 @@ class RheoInterval():
         str_res = str(self.type) + ' (' + self.name + ') - '
         if (self.type == 'OSCILL_POS'):
             str_res += 'A=' + str(self.amplitude) + '; T=' + str(self.period)
+        elif (self.type == 'OSCILL_FORCE'):
+            str_res += 'A=' + str(self.amplitude) + '; T=' + str(self.period)
         elif (self.type == 'SWEEP_FREQ'):
             str_res += 'A=' + str(self.amplitude) + '; w=[' + str(self.minfreq) + ',' + str(self.maxfreq) + ']; ' + str(self.numfreq) + ' pts ' + str(self.sort)
         elif (self.type == 'SWEEP_STRAIN'):
+            str_res += 'w=' + str(self.freq) + '; A=[' + str(self.minamp) + ',' + str(self.maxamp) + ']; ' + str(self.numamps) + ' pts ' + str(self.sort)
+        elif (self.type == 'SWEEP_STRESS'):
             str_res += 'w=' + str(self.freq) + '; A=[' + str(self.minamp) + ',' + str(self.maxamp) + ']; ' + str(self.numamps) + ' pts ' + str(self.sort)
         elif (self.type == 'STEP_RATE'):
             str_res += 'v=' + str(self.rate) + '; totx=' + str(self.strain)
@@ -384,6 +483,14 @@ class RheoInterval():
                     cur_name = self.namebase + fext
                 res.append(RheoInterval(self.type, self.axID, self.active, self.OSR, namebase=self.namebase, filename=cur_name, 
                                                 amplitude=self.amplitude, period=self.period, offset=self.offset, reptimes=1))
+        elif (self.type == 'OSCILL_FORCE'):
+            for j in range(self.reptimes):
+                if self.reptimes > 1:
+                    cur_name = self.namebase + '_' + str(j).zfill(RC_INTERVAL_REPLEN) + fext
+                else:
+                    cur_name = self.namebase + fext
+                res.append(RheoInterval(self.type, self.axID, self.active, self.OSR, namebase=self.namebase, filename=cur_name, 
+                                                amplitude=self.amplitude, period=self.period, reptimes=1))
         elif (self.type == 'SWEEP_FREQ'):
             all_freq = BuildSweep(self.minfreq, self.maxfreq, self.ppd, self.sort)
             for j in range(self.reptimes):
@@ -398,6 +505,13 @@ class RheoInterval():
                 for i in range(len(all_amp)):
                     cur_amp = all_amp[i]
                     res.append(RheoInterval('OSCILL_POS', self.axID, self.active, self.OSR, namebase=self.namebase, filename=self.namebase + '_' + str(i).zfill(RC_INTERVAL_IDLEN) + chr(j+97) + fext, amplitude=cur_amp, period=cur_period, offset=self.offset, reptimes=1))
+        elif (self.type == 'SWEEP_STRESS'):
+            cur_period = 2*np.pi/self.freq
+            all_amp = BuildSweep(self.minamp, self.maxamp, self.ppd, self.sort)
+            for j in range(self.reptimes):
+                for i in range(len(all_amp)):
+                    cur_amp = all_amp[i]
+                    res.append(RheoInterval('OSCILL_FORCE', self.axID, self.active, self.OSR, namebase=self.namebase, filename=self.namebase + '_' + str(i).zfill(RC_INTERVAL_IDLEN) + chr(j+97) + fext, amplitude=cur_amp, period=cur_period, reptimes=1))
         elif (self.type == 'STEP_RATE'):
             for j in range(self.reptimes):
                 if (self.reptimes > 1):
@@ -407,10 +521,10 @@ class RheoInterval():
                 cur_fname_asc = cur_fname
                 if self.twoways:
                     cur_fname_asc += '_'+RC_INTSUFFIX_POS
-                res.append(RheoInterval(self.type, self.axID, self.active, self.OSR, namebase=self.namebase, filename=cur_fname_asc+fext, rate=self.rate, strain=self.strain, 
+                res.append(RheoInterval(self.type, self.axID, self.active, self.OSR, namebase=cur_fname, filename=cur_fname_asc+fext, rate=self.rate, strain=self.strain, 
                                         twoways=False, offset=self.offset, reptimes=1))
                 if self.twoways:
-                    res.append(RheoInterval(self.type, self.axID, self.active, self.OSR, namebase=self.namebase, filename=cur_fname+'_'+RC_INTSUFFIX_NEG+fext, rate=self.rate, 
+                    res.append(RheoInterval(self.type, self.axID, self.active, self.OSR, namebase=cur_fname, filename=cur_fname+'_'+RC_INTSUFFIX_NEG+fext, rate=self.rate, 
                                             strain=self.strain, twoways=False, offset=self.offset, reptimes=1))
         elif (self.type == 'STEP_POS'):
             for j in range(self.reptimes):
@@ -426,6 +540,20 @@ class RheoInterval():
                 if self.twoways:
                     res.append(RheoInterval(self.type, self.axID, self.active, self.OSR, namebase=self.namebase, filename=cur_fname+'_'+RC_INTSUFFIX_NEG+fext, amplitude=self.amplitude, 
                                             duration=self.duration, twoways=False, offset=self.offset, reptimes=1))
+        elif (self.type == 'STEP_FORCE'):
+            for j in range(self.reptimes):
+                if (self.reptimes > 1):
+                    cur_fname = self.namebase + '_' + str(j).zfill(RC_INTERVAL_REPLEN)
+                else:
+                    cur_fname = self.namebase
+                cur_fname_asc = cur_fname
+                if self.twoways:
+                    cur_fname_asc += '_'+RC_INTSUFFIX_POS
+                res.append(RheoInterval(self.type, self.axID, self.active, self.OSR, namebase=self.namebase, filename=cur_fname_asc+fext, amplitude=self.amplitude, duration=self.duration, 
+                                        steptime=self.steptime, rectime=self.recoverytime, twoways=False, reptimes=1))
+                if self.twoways:
+                    res.append(RheoInterval(self.type, self.axID, self.active, self.OSR, namebase=self.namebase, filename=cur_fname+'_'+RC_INTSUFFIX_NEG+fext, amplitude=self.amplitude, 
+                                            duration=self.duration, steptime=self.steptime, rectime=self.recoverytime, twoways=False, reptimes=1))
         elif (self.type == 'SWEEP_RATE'):
             all_rates = BuildSweep(self.minrate, self.maxrate, self.ppd, self.sort)
             for j in range(self.reptimes):

@@ -5,6 +5,27 @@ import bisect
 from rDLSpp import IOfuncs as iof
 from rDLSpp import RheoCorr as rhc
 
+def CalcTimeDependentModuli(fname, Period=1.0, StartTime=0.25, StepTime=0.25, AnalyzePeriods=1, Duration=None, verbose=0, usecols=(1,2,6), **loadtxt_kwargs):
+    if StepTime==0:
+        return FTanalysisRheology(fname, Period=Period, StartTime=StartTime, AnalyzePeriods=AnalyzePeriods, verbose=verbose, usecols=usecols, **loadtxt_kwargs)
+    else:
+        if Duration is None:
+            t_list, x_list, f_list = iof.ReadRheoData(fname, usecols, unpack=True, **loadtxt_kwargs)
+            Duration = (t_list[-1]-t_list[0])/1000
+        Dur_periods = Duration/Period
+        npoints = int(np.floor((Dur_periods-AnalyzePeriods-StartTime)/StepTime))
+        if npoints > 0:
+            res = np.empty((npoints, 3), dtype=float)
+            for i in range(npoints):
+                curt_periods = StartTime+i*StepTime
+                G, _ =  FTanalysisRheology(fname, Period=Period, StartTime=curt_periods, AnalyzePeriods=AnalyzePeriods, FreqRecord=None, ForceCorrection=None, HigherHarmonics=0, 
+                                           return_spectrum=False, verbose=verbose, usecols=usecols, **loadtxt_kwargs)
+                res[i] = (curt_periods*Period, np.real(G), np.imag(G))
+            return res
+        else:
+            return None
+    
+
 """
 Parameters:
 ----------
@@ -54,15 +75,23 @@ def FTanalysisRheology(fname, Period=1.0, StartTime=1.0, AnalyzePeriods=1, FreqR
     AvgForce = np.mean(f_list[IndexEdges[0]:IndexEdges[1]])
     
     # process first harmonic to get moduli
-    PositionFFT_FirstHarm = PositionFFT[NumPeriods]
-    ForceFFT_FirstHarm = ForceFFT[NumPeriods]
-    G_FirstHarm = ForceFFT_FirstHarm/PositionFFT_FirstHarm
+    if NumPeriods < len(PositionFFT):
+        PositionFFT_FirstHarm = PositionFFT[NumPeriods]
+        ForceFFT_FirstHarm = ForceFFT[NumPeriods]
+        G_FirstHarm = ForceFFT_FirstHarm/PositionFFT_FirstHarm
+    else:
+        PositionFFT_FirstHarm = np.nan
+        ForceFFT_FirstHarm = np.nan
+        G_FirstHarm = np.nan
     
     G_HigherHarm = []
     for j_harm in range(HigherHarmonics):
         #cur_pos_harm = PositionFFT[NumPeriods*j_harm]
         #cur_force_harm = ForceFFT[NumPeriods*j_harm]
-        G_HigherHarm.append(ForceFFT[NumPeriods*j_harm]/ForceFFT[NumPeriods])
+        if NumPeriods*j_harm < len(ForceFFT) and NumPeriods < len(ForceFFT):
+            G_HigherHarm.append(ForceFFT[NumPeriods*j_harm]/ForceFFT[NumPeriods])
+        else:
+            G_HigherHarm.append(np.nan)
     
     # Eventually correct G for time delay btw force and position readings
     PhaseDiff = 2*np.pi*ManualTimeDelay_sec*1.0/Period
