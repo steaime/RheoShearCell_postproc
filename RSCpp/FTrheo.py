@@ -19,8 +19,7 @@ def CalcTimeDependentModuli(fname, Period=1.0, StartTime=0.25, StepTime=0.25, An
             res = np.empty((npoints, 3), dtype=float)
             for i in range(npoints):
                 curt_periods = StartTime+i*StepTime
-                G, _ =  FTanalysisRheology(fname, Period=Period, StartTime=curt_periods, AnalyzePeriods=AnalyzePeriods, FreqRecord=None, ForceCorrection=None, HigherHarmonics=0, 
-                                           return_spectrum=False, verbose=verbose, usecols=usecols, **loadtxt_kwargs)
+                G, _ =  FTanalysisRheology(fname, Period=Period, StartTime=curt_periods, AnalyzePeriods=AnalyzePeriods, FreqRecord=None, ForceCorrection=None, HigherHarmonics=0, verbose=verbose, usecols=usecols, **loadtxt_kwargs)
                 res[i] = (curt_periods*Period, np.real(G), np.imag(G))
             return res
         else:
@@ -37,22 +36,28 @@ Parameters:
 - FreqRecord:     int, how many datapoints per second. If none, it will be calculated automatically
 - ForceCorrection:RheoCorr.ForceCorrection or None
 """
-def FTanalysisRheology(fname, Period=1.0, StartTime=1.0, AnalyzePeriods=1, FreqRecord=None, ForceCorrection=None, HigherHarmonics=6, return_spectrum=False, verbose=0, usecols=(1,2,6), **loadtxt_kwargs):
+def FTanalysisRheology(fname, Period=1.0, StartTime=1.0, AnalyzePeriods=1, FreqRecord=None, ForceCorrection=None, HigherHarmonics=6, verbose=0, usecols=(1,2,6), **loadtxt_kwargs):
     
     logging.debug('FTanalysisRheology processing file {0}'.format(fname))
+
+    # Load information on Rheodiff profiles
+    # Also load raw data if different resampled profiles were saved on the same output file.
+    t_list, x_list, f_list = iof.ReadRheoData(fname, usecols, unpack=True, **loadtxt_kwargs)
+    
+    return FTrheo(t_list, x_list, f_list, Period=Period, StartTime=StartTime, AnalyzePeriods=AnalyzePeriods, FreqRecord=FreqRecord, ForceCorrection=ForceCorrection, HigherHarmonics=HigherHarmonics, verbose=verbose, t_scale=1000.0, fname=fname)
+
+
+def FTrheo(t_list, x_list, f_list, Period=1.0, StartTime=1.0, AnalyzePeriods=1, FreqRecord=None, ForceCorrection=None, HigherHarmonics=6, StrainControlled=True, verbose=0, t_scale=1.0, fname=None):
 
     # Period: Oscillation period, in seconds
     # FreqRecord: How many points per second
     ManualTimeDelay_sec = 0.0 # Eventually, consider a time delay between force and position readings
 
-    # Load information on Rheodiff profiles
-    # Also load raw data if different resampled profiles were saved on the same output file.
-    t_list, x_list, f_list = iof.ReadRheoData(fname, usecols, unpack=True, **loadtxt_kwargs)
     if ForceCorrection is not None:
         ForceCorrection.Correct(f_list, x_list, inplace=True)
     
     if FreqRecord is None:
-        FreqRecord = 1000.0 / (t_list[1] - t_list[0])
+        FreqRecord = t_scale / (t_list[1] - t_list[0])
     if Period is None:
         raise ValueError('Period cannot be None')
       
@@ -65,7 +70,7 @@ def FTanalysisRheology(fname, Period=1.0, StartTime=1.0, AnalyzePeriods=1, FreqR
         raise ValueError('Error processing file {0}: Points per period={1}, FreqRecord={2}, Period={3}'.format(fname, PointsPerPeriod, FreqRecord, Period))
     WindowEdges = (StartTime, StartTime+AnalyzePeriods) # [t_min, t_max], in units of the period
     #IndexEdges = (int(WindowEdges[0] * PointsPerPeriod), int(WindowEdges[1] * PointsPerPeriod))
-    IndexEdges = [bisect.bisect(t_list-t_list[0], winedge*Period*1e3) for winedge in WindowEdges]
+    IndexEdges = [bisect.bisect(t_list-t_list[0], winedge*Period*t_scale) for winedge in WindowEdges]
     NumPeriods = int(WindowEdges[1] - WindowEdges[0])
     PointsPerWindow = IndexEdges[1] - IndexEdges[0]
     if NumPeriods <= 0 or PointsPerWindow <= 0 or PointsPerWindow < FreqRecord * Period * NumPeriods - 1:
@@ -97,14 +102,14 @@ def FTanalysisRheology(fname, Period=1.0, StartTime=1.0, AnalyzePeriods=1, FreqR
             ForceFFT_FirstHarm = np.nan
             G_FirstHarm = np.nan
 
-        G_HigherHarm = []
+        F_HigherHarm = []
         for j_harm in range(HigherHarmonics):
             #cur_pos_harm = PositionFFT[NumPeriods*j_harm]
             #cur_force_harm = ForceFFT[NumPeriods*j_harm]
             if NumPeriods*j_harm < len(ForceFFT) and NumPeriods < len(ForceFFT):
-                G_HigherHarm.append(ForceFFT[NumPeriods*j_harm]/ForceFFT[NumPeriods])
+                F_HigherHarm.append(ForceFFT[NumPeriods*j_harm]/ForceFFT[NumPeriods])
             else:
-                G_HigherHarm.append(np.nan)
+                F_HigherHarm.append(np.nan)
 
         # Eventually correct G for time delay btw force and position readings
         PhaseDiff = 2*np.pi*ManualTimeDelay_sec*1.0/Period
@@ -120,13 +125,8 @@ def FTanalysisRheology(fname, Period=1.0, StartTime=1.0, AnalyzePeriods=1, FreqR
             print('  k_phase = ' + str(np.angle(G_FirstHarm)) + ' rad')
             print('  k_real  = ' + str(np.real(G_FirstHarm)) + ' N/mm')
             print('  k_imag  = ' + str(np.imag(G_FirstHarm)) + ' N/mm')
-            print('  tandelta= ' + str(np.tan(np.angle(G_FirstHarm))) + ' N/mm')
-
-        G_spectrum = []
-        if return_spectrum:
-            for i in range(len(PositionFFT)):
-                G_spectrum.append(ForceFFT[i]/PositionFFT[i]) 
+            print('  tandelta= ' + str(np.tan(np.angle(G_FirstHarm))))
 
         return G_FirstHarm, {'F': ForceFFT_FirstHarm, 'x': PositionFFT_FirstHarm, 
-                             'F0': AvgForce, 'In': G_HigherHarm, 'F_fft': ForceFFT, 
-                             'x_fft': PositionFFT, 'spectrum': G_spectrum}
+                             'F0': AvgForce, 'Fn': F_HigherHarm, 'F_fft': ForceFFT, 
+                             'x_fft': PositionFFT, 'fft_dw': 2*np.pi/(Period*NumPeriods)}
