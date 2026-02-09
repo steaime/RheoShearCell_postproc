@@ -32,4 +32,36 @@ def ReadRheoData(fname, usecols=(1,2,6), unpack=True, **loadtxt_kwargs):
         else:
             return None
 
-    
+def find_namebase(fpath, ret_suffix=False, rep_len=1, ext_len=4):
+    cur_fname = os.path.basename(fpath)[:-ext_len]
+    suff = ''
+    if cur_fname[-ext_len:] in ['_POS', '_NEG']:
+        suff = cur_fname[-4-rep_len:]
+        cur_fname = cur_fname[:-4]
+    else: 
+        suff = cur_fname[-rep_len:]
+    logging.debug('filename processed to return filename (without extension) "{0}", namebase "{1}", suffix "{2}" (rep_len=={3})'.format(os.path.basename(fpath)[:-ext_len], cur_fname, suff, rep_len))
+    if rep_len==0:
+        ret_name = cur_fname
+    else:
+        ret_name = cur_fname[:-rep_len]
+    if ret_suffix:
+        return ret_name, suff
+    else:
+        return ret_name
+
+def find_file_params(fname, explog_data, rep_len=1):
+    cur_namebase, suffix = find_namebase(fname, ret_suffix=True, rep_len=rep_len)
+    find_params = explog_data[explog_data['Name'].str.contains(cur_namebase)]
+    if len(find_params)==1:
+        return find_params.iloc[0]
+    elif len(find_params)>0:
+        if suffix[-3:] == 'POS':
+            return find_params.iloc[0]
+        elif suffix[-3:] == 'NEG':
+            return find_params.iloc[1]
+        else:
+            return find_params.iloc[0]
+    else:
+        logging.debug('find_params ({0}) has len==0'.format(cur_namebase))
+        return None
