@@ -51,6 +51,7 @@ def proc_file(fpath, explog_data, rep_len=None, anal_type='read', anal_params={}
                 if anal_params['OSRparams'] is not None:
                     OSR_period = anal_params['OSRparams']['Period']
                     ORS_amp = anal_params['OSRparams']['Amp']
+                    logging.debug('OSR period ({0:.2f}) and amplitude ({1:.3f}) read from analysis parameters'.format(OSR_period, ORS_amp))
             tres_res = None
             if anal_type=='FT':
                 logging.debug('FT analysis')
@@ -72,12 +73,16 @@ def proc_file(fpath, explog_data, rep_len=None, anal_type='read', anal_params={}
                 if OSR_period is not None:
                     if 'nperiods' not in anal_params:
                         anal_params['nperiods'] = int(int_duration/OSR_period - 2)
+                        logging.debug('Number of periods automatically set to {0}'.format(anal_params['nperiods']))
+                    else:
+                        logging.debug('Number of periods manually set to {0} (OSR period: {1:.1f}ms)'.format(anal_params['nperiods'], OSR_period))
                     G, opt = ft.FTanalysisRheology(fpath, Period=OSR_period, AnalyzePeriods=anal_params['nperiods'], 
                                                  FreqRecord=None, usecols=(1,cur_osrstrain_col,6))
                     if 'Tres_Step' in anal_params:
                         tres_res = ft.CalcTimeDependentModuli(fpath, Period=OSR_period, StepTime=anal_params['Tres_Step'], 
                                                            AnalyzePeriods=anal_params['Tres_Nint'], Duration=int_duration, usecols=(1,cur_osrstrain_col,6))
                 else:
+                    logging.debug('OSR_period needed for analysis of file ' + fpath)
                     opt = None
             if tres_res is not None:
                 tres_fpath = sf.AddSuffixToPath(fpath, '_tres' + anal_type)
@@ -179,6 +184,7 @@ def proc_files(fpath_list, explog_data, filter_type=None, filter_axis=None, filt
                 if anal_type=='OSR':
                     if 'OSRparam_list' in anal_params:
                         anal_params['OSRparams'] = anal_params['OSRparam_list'][i]
+                        logging.debug('OSRparams extracted from list: {0}'.format(anal_params['OSRparams']))
                 res.append(proc_file(fpath_list[i], explog_data, anal_type=anal_type, anal_params=anal_params, usecols=usecols, rep_len=rep_len))
                 if max_num is not None:
                     if len(res) >= max_num:
@@ -204,23 +210,27 @@ def proc_files(fpath_list, explog_data, filter_type=None, filter_axis=None, filt
         else:
             return None
     elif anal_type in ['FT', 'OSR']:
-        res_arr = np.asarray([[x['StartedOn'], 
-                               x['Amplitude'], 
-                               x['Period'], 
-                               x['Offset'], 
-                               np.abs(x['F']), 
-                               np.angle(x['F']), 
-                               np.abs(x['x']), 
-                               np.angle(x['x']), 
-                               np.abs(x['F']/x['x']), 
-                               -np.angle(x['F']/x['x']), 
-                               -np.real(x['F']/x['x']), 
-                               -np.imag(x['F']/x['x']), 
-                               x['F0'],
-                               x['OSR_Period'], 
-                               x['OSR_Amp'] 
-                              ] 
-                              for x in res])
+        res_list = []
+        for x in res:
+            if x is None:
+                res_list.append([np.nan]*15)
+            else:
+                res_list.append([x['StartedOn'], 
+                            x['Amplitude'], 
+                            x['Period'], 
+                            x['Offset'], 
+                            np.abs(x['F']), 
+                            np.angle(x['F']), 
+                            np.abs(x['x']), 
+                            np.angle(x['x']), 
+                            np.abs(x['F']/x['x']), 
+                            -np.angle(x['F']/x['x']), 
+                            -np.real(x['F']/x['x']), 
+                            -np.imag(x['F']/x['x']), 
+                            x['F0'],
+                            x['OSR_Period'], 
+                            x['OSR_Amp']])
+        res_arr = np.asarray(res_list)
         return res_arr
     elif anal_type=='flowcurve':
         res_arr = np.asarray(res)

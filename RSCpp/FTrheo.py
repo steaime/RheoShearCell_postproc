@@ -58,8 +58,11 @@ def FTrheo(t_list, x_list, f_list, Period=1.0, StartTime=1.0, AnalyzePeriods=1, 
     
     if FreqRecord is None:
         FreqRecord = t_scale / (t_list[1] - t_list[0])
+        logging.debug('Auto-detected record frequency: {0:.3f} fps (t_scale={1}, t0={2:.3f}s, t1={3:.4f}s)'.format(FreqRecord, t_scale, t_list[0], t_list[1]))
     if Period is None:
         raise ValueError('Period cannot be None')
+    else:
+        logging.debug('Period: {0:.3f} s'.format(Period))
       
     # STEP 1: Load each dataset and select subsets equal to N oscillation periods
     # For each subset, calculate FFT and store it (amplitude and phase)
@@ -74,7 +77,10 @@ def FTrheo(t_list, x_list, f_list, Period=1.0, StartTime=1.0, AnalyzePeriods=1, 
     NumPeriods = int(WindowEdges[1] - WindowEdges[0])
     PointsPerWindow = IndexEdges[1] - IndexEdges[0]
     if NumPeriods <= 0 or PointsPerWindow <= 0 or PointsPerWindow < FreqRecord * Period * NumPeriods - 1:
-        logging.warning('Error processing file {0} ({1} time points): PointsPerWindow={2} (IndexEdges={3}), NumPeriods={4} (start: {5}, len: {6}, WindowEdges={7}), PointsPerPeriod={8} (T={9}, {10} fps)'.format(fname, len(t_list), PointsPerWindow, IndexEdges, NumPeriods, StartTime, AnalyzePeriods, WindowEdges, PointsPerPeriod, Period, FreqRecord))
+        strerr = 'Error processing file {0} ({1} time points): PointsPerWindow={2} (IndexEdges={3})'.format(fname, len(t_list), PointsPerWindow, IndexEdges) +\
+                 ', NumPeriods={0} (start: {1}, len: {2}, WindowEdges={3})'.format(NumPeriods, StartTime, AnalyzePeriods, WindowEdges) +\
+                 ', PointsPerPeriod={0} (T={1}, {2} fps)'.format(PointsPerPeriod, Period, FreqRecord)
+        logging.warning(strerr)
         return np.nan, {'F': np.nan, 'x': np.nan, 
                          'F0': np.nan, 'In': None, 'F_fft': None, 
                          'x_fft': None, 'spectrum': None}
