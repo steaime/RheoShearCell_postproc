@@ -1,9 +1,10 @@
 import os
 import numpy as np
 import logging
+from RSCpp import SharedFunctions as sf
 
 
-def ReadRheoData(fname, usecols=(1,2,6), unpack=True, **loadtxt_kwargs):
+def ReadRheoData(fname, usecols=(1,2,6), unpack=True, Decimate=1, **loadtxt_kwargs):
     """Reads a text file with output of a rheology experiment
 
     Parameters
@@ -24,7 +25,11 @@ def ReadRheoData(fname, usecols=(1,2,6), unpack=True, **loadtxt_kwargs):
         if unpack:
             strlog += ' (unpack)'
         logging.debug(strlog)
-        return np.loadtxt(fname, delimiter='\t', usecols=usecols, unpack=unpack, **loadtxt_kwargs)
+        res = np.loadtxt(fname, delimiter='\t', usecols=usecols, unpack=unpack, **loadtxt_kwargs)
+        if Decimate>1:
+            return [sf.Decimate(arr, q=Decimate, q_meaning='resc_f')[1] for arr in res]
+        else:
+            return res
     else:
         logging.error('ReadData error: file ' + str(fname) + ' does not exist')
         if unpack and len(usecols)>1:

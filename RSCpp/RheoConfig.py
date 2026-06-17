@@ -140,9 +140,12 @@ class RheoProtocol():
                                 for line in f: 
                                     if row_count == 0:
                                         file_header = line.strip().split('\t')
+                                        logging.debug('Log file columns: ' + str(file_header))
                                     else:
                                         res.append(line.strip().split('\t'))
+                                        logging.debug('Row {0} read: {1}'.format(row_count, res[-1][3]))
                                     row_count += 1
+                                break
                     else: 
                         for line in f: 
                             if row_count == 0:
@@ -150,7 +153,7 @@ class RheoProtocol():
                             else:
                                 res.append(line.strip().split('\t'))
                             row_count += 1
-                logging.info(str(row_count) + ' rows read from expLog file ' + str(fname))
+                logging.info(str(row_count-1) + ' rows read from expLog file ' + str(fname))
                 if load_fnames:
                     list_names = self.GetFullFilenames()
                     logging.info('expLog file updated with ' + str(len(list_names)) + ' output file paths')
@@ -167,8 +170,8 @@ class RheoProtocol():
             else:
                 logging.error('No expLog file found at path ' + str(fname))
         return self.explogdata
-    
-    def ReadRheoData(self, row_index, usecols=(1,2,6), unpack=True, loadtxt_kwargs={}):
+
+    def ReadRheoData(self, row_index, usecols=(1,2,6), unpack=True, loadtxt_kwargs={}, Decimate=1):
         if self.explogdata is None:
             self.LoadExpLog()
         if self.explogdata is None:
@@ -176,11 +179,33 @@ class RheoProtocol():
         else:
             if row_index < len(self.explogdata):
                 if bool(self.explogdata['FilePath_exists'][row_index]):
-                    return iof.ReadRheoData(self.explogdata['FilePath'][row_index], usecols=usecols, unpack=unpack, **loadtxt_kwargs)
+                    return iof.ReadRheoData(self.explogdata['FilePath'][row_index], usecols=usecols, unpack=unpack, Decimate=Decimate, **loadtxt_kwargs)
                 else:
                     logging.error('Row index {0} of explog DataFrame has no valid FilePath associated ({1})'.format(row_index, self.explogdata['FilePath'][row_index]))
             else:
                 raise logging.error('Row index {0} out of bounds for explog DataFrame with {1} intervals'.format(row_index, len(self.explogdata)))
+    
+    def ReadRheoData_Multi(self, row_list=None, append=True, usecols=(1,2,6), unpack=True, reset_time=True, loadtxt_kwargs={}, Decimate=1):
+        if row_list is None:
+            row_list = list(range(len(self.explogdata)))
+        read_res = []
+        for ridx in row_list:
+            read_res.append(self.ReadRheoData(row_index=ridx, usecols=usecols, unpack=True, loadtxt_kwargs=loadtxt_kwargs, Decimate=Decimate))
+        if len(read_res) > 0:
+            if append:
+                res = read_res[0]
+                logging.debug('ReadRheoData_Multi: read result has shape ({0}, {1}, {2})'.format(len(read_res), len(read_res[0]), [len(x[0]) for x in read_res]))
+                logging.debug('                    appended result will have shape ({0}, {1})'.format(len(res), np.sum([len(x[0]) for x in read_res])))
+                for i in range(1, len(read_res)):
+                    res = [np.concatenate([res[j], read_res[i][j]]) for j in range(len(res))]
+                if reset_time:
+                    res[0] = res[0]-res[0][0]
+                if unpack:
+                    return res
+                else:
+                    return np.vstack(res)
+            else:
+                return read_res
 
     def LoadFromConfigFile(self, fname, fext='.txt', comment_prefix=";"):
         """Reads the configuration file for rheology
@@ -260,7 +285,7 @@ class RheoProtocol():
                     elif cur_type == 'STEP_RATE':
                         cur_rate = config.getfloat(strsec, 'ShearRate', fallback=-1.0)
                         cur_totstrain = config.getfloat(strsec, 'TotalStrain', fallback=-1.0)
-                        cur_revafter = config.getboolean(strsec, 'ReverseAfter', fallback=1)
+                        cur_revafter = config.getboolean(strsec, 'ReverseAfter', fallback=0)
                         self.intervals.append(RheoInterval(cur_type, AxID=cur_ax, Active=cur_active, OSR=cur_osr, namebase=cur_name, rate=cur_rate, 
                                                            strain=cur_totstrain, twoways=cur_revafter, offset=cur_offset, reptimes=cur_reptimes))
 
@@ -281,7 +306,7 @@ class RheoProtocol():
                         cur_dur = config.getfloat(strsec, 'Duration', fallback=0.0)
                         cur_stept = config.getfloat(strsec, 'StepTime', fallback=0.0)
                         cur_rect = config.getfloat(strsec, 'RecoveryTime', fallback=0.0)
-                        cur_revafter = config.getboolean(strsec, 'ReverseAfter', fallback=1)
+                        cur_revafter = config.getboolean(strsec, 'ReverseAfter', fallback=0)
                         self.intervals.append(RheoInterval(cur_type, AxID=cur_ax, OSR=cur_osr, namebase=cur_name, amplitude=cur_amp, 
                                                            duration=cur_dur, twoways=cur_revafter, offset=cur_offset, reptimes=cur_reptimes))
                     elif cur_type == 'STEP_FORCE':
@@ -301,11 +326,12 @@ class RheoProtocol():
 class RheoInterval():
     """ Bundles rheo interval properties """
 
-    def __init__(self, IntervalType=None, AxID=0, Active=1, OSR=None, **kwdict):
+    def __init__(self, IntervalType=None, AxID=0, Active=1, OSR=None, naming_version=202606, **kwdict):
         self.type = IntervalType
         self.axID = AxID
         self.active = Active
         self.OSR = OSR
+        self.naming_version = naming_version
         if (IntervalType == 'OSCILL_POS'):
             self._init_oscillPos(**kwdict)
         elif (IntervalType == 'OSCILL_FORCE'):
@@ -548,6 +574,8 @@ class RheoInterval():
                     cur_fname = self.namebase
                 cur_fname_asc = cur_fname
                 if self.twoways:
+                    logging.debug('Splitting two ways STEP_RATE interval {0} in _{1} and _{2} ones'.format(self.namebase, RC_INTSUFFIX_POS, RC_INTSUFFIX_NEG))
+                if self.twoways or self.naming_version >= 202606:
                     cur_fname_asc += '_'+RC_INTSUFFIX_POS
                 res.append(RheoInterval(self.type, self.axID, self.active, self.OSR, namebase=cur_fname, filename=cur_fname_asc+fext, rate=self.rate, strain=self.strain, 
                                         twoways=False, offset=self.offset, reptimes=1))
@@ -561,7 +589,7 @@ class RheoInterval():
                 else:
                     cur_fname = self.namebase
                 cur_fname_asc = cur_fname
-                if self.twoways:
+                if self.twoways or self.naming_version >= 202606:
                     cur_fname_asc += '_'+RC_INTSUFFIX_POS
                 res.append(RheoInterval(self.type, self.axID, self.active, self.OSR, namebase=self.namebase, filename=cur_fname_asc+fext, amplitude=self.amplitude, duration=self.duration, 
                                         twoways=False, offset=self.offset, reptimes=1))

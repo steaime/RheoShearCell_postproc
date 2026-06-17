@@ -86,27 +86,34 @@ def Decimate(arr, q, x=None, bin_spacing='lin', q_meaning='resc_f', xmin=None, x
     if nbins > 1:
         if x is None:
             x = np.arange(1, len(arr)+1)
-        if xmin is None:
-            xmin = np.min(x)
-        if xmax is None:
-            xmax = np.max(x)
-        assert xmax > xmin, 'Maximum x value has to be larger than minimum'
-        if bin_spacing=='lin':
-            xbins = np.linspace(xmin, xmax, nbins+1, endpoint=True)
-        elif bin_spacing=='log':
-            assert xmin > 0, 'Minimum x value has to be strictly positive for log spacing'
-            xbins = np.geomspace(xmin, xmax, nbins+1, endpoint=True)
+        if nbins >= len(arr):
+            if return_opts:
+                return x, arr, {}
+            else:
+                return x, arr
         else:
-            raise ValueError('Invalid spacing: "{0}"'.format(bin_spacing))
-        bin_idx = np.digitize(x, xbins)
-        res = np.array([np.nanmean(arr[bin_idx==i]) for i in range(len(xbins))])
-        avg_x = 0.5*(xbins[1:]+xbins[:-1])
-        if return_opts:
-            num = np.array([np.count_nonzero(bin_idx==i) for i in range(len(xbins))])
-        if return_opts:
-            return avg_x, res[1:], {'bin_count': num, 'xbins': xbins, 'bin_idx': bin_idx}
-        else:
-            return avg_x, res[1:]
+            if xmin is None:
+                xmin = np.min(x)
+            if xmax is None:
+                xmax = np.max(x)
+            assert xmax > xmin, 'Maximum x value has to be larger than minimum'
+            if bin_spacing=='lin':
+                xbins = np.linspace(xmin, xmax, nbins+1, endpoint=True)
+            elif bin_spacing=='log':
+                assert xmin > 0, 'Minimum x value has to be strictly positive for log spacing'
+                xbins = np.geomspace(xmin, xmax, nbins+1, endpoint=True)
+            else:
+                raise ValueError('Invalid spacing: "{0}"'.format(bin_spacing))
+            bin_idx = np.digitize(x, xbins)
+            res = np.array([np.nanmean(arr[bin_idx==i]) for i in range(len(xbins))])
+            avg_x = 0.5*(xbins[1:]+xbins[:-1])
+            logging.debug('Decimate reduces array shape from {0} to {1}'.format(len(arr), len(avg_x)))
+            if return_opts:
+                num = np.array([np.count_nonzero(bin_idx==i) for i in range(len(xbins))])
+            if return_opts:
+                return avg_x, res[1:], {'bin_count': num, 'xbins': xbins, 'bin_idx': bin_idx}
+            else:
+                return avg_x, res[1:]
     else:
         return None
     
