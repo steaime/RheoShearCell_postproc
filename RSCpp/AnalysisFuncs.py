@@ -7,7 +7,7 @@ from RSCpp import FTrheo as ft
 from RSCpp import IOfuncs as iof
 from RSCpp import SharedFunctions as sf
 
-def proc_file(fpath, explog_data, rep_len=None, anal_type='read', anal_params={}, usecols=None):
+def proc_file(fpath, explog_data, rep_len=None, anal_type='read', anal_params={}, usecols=None, decimate=0):
     find_params = iof.find_file_params(fpath, explog_data, rep_len=rep_len)
     #logging.debug('proc_file procedure extracted parameters file {0}: {1}'.format(fpath, find_params))
     if find_params is not None:
@@ -18,20 +18,48 @@ def proc_file(fpath, explog_data, rep_len=None, anal_type='read', anal_params={}
                 cur_straincol, cur_osrstrain_col = 2, 5
             usecols=(1, cur_straincol, 6)
         if anal_type in ['read', 'plot', 'flowcurve', 'avgperiod']:
-            t, strain, stress = iof.ReadRheoData(fpath, usecols=usecols, unpack=True)
+            t, strain, stress = iof.ReadRheoData(fpath, usecols=usecols, unpack=True, decimate=decimate)
         if anal_type=='count':
             return 1
         elif anal_type=='read':
             return t, strain, stress
         elif anal_type=='plot':
             ax = anal_params['ax']
+            if 'plot_slice' in anal_params:
+                slc = slice(*anal_params['plot_slice'])
+                t_plot, strain_plot, stress_plot = t[slc], strain[slc], stress[slc]
+            else:
+                t_plot, strain_plot, stress_plot = t, strain, stress
             if anal_params['plot_type'] == 'time':
-                ax[0].plot((t-t[0])/1000-anal_params['t0'], strain, anal_params['fmt'])
-                ax[1].plot((t-t[0])/1000-anal_params['t0'], stress, anal_params['fmt'])
+                if 'global_time' in anal_params:
+                    if anal_params['global_time'] == 'auto':
+                        anal_params['global_time'] = t[0]
+                    t_off = anal_params['global_time']
+                else:
+                    t_off = t[0]
+                plot_data = [(t_plot-t_off)/1000-anal_params['t0'], strain_plot, stress_plot]
+                ax[0].plot(plot_data[0], plot_data[1], anal_params['fmt'])
+                ax[1].plot(plot_data[0], plot_data[2], anal_params['fmt'])
+                return plot_data
             elif anal_params['plot_type'] == 'stressstrain':
-                ax.plot(strain, stress, anal_params['fmt'])
+                if 'stress_corr_spl' in anal_params:
+                    stress_plot = stress_plot - anal_params['stress_corr_spl'](strain_plot)
+                if 'strain_off' in anal_params:
+                    if anal_params['strain_off'] == 'first':
+                        strain_plot = strain_plot - strain[0]
+                    else:
+                        strain_plot = strain_plot - anal_params['strain_off']
+                if 'strain_abs' in anal_params:
+                    if anal_params['strain_abs']:
+                        strain_plot = np.abs(strain_plot)
+                if 'stress_abs' in anal_params:
+                    if anal_params['stress_abs']:
+                        stress_plot = np.abs(stress_plot)
+                ax.plot(strain_plot, stress_plot, anal_params['fmt'])
+                return [strain_plot, stress_plot]
             elif anal_params['plot_type'] == 'stressrelax':
-                ax.plot((t-t[0])/1000-anal_params['t0'], stress, anal_params['fmt'])
+                ax.plot((t_plot-t[0])/1000-anal_params['t0'], stress_plot, anal_params['fmt'])
+                return [(t_plot-t[0])/1000-anal_params['t0'], stress_plot]
         elif anal_type == 'avgperiod':
             if 'StartIdx' not in anal_params:
                 anal_params['StartIdx'] = 0
@@ -122,7 +150,7 @@ def proc_file(fpath, explog_data, rep_len=None, anal_type='read', anal_params={}
         else:
             return None
 
-def proc_files(fpath_list, explog_data, filter_type=None, filter_axis=None, filter_name=None, rep_len=None, max_num=None, usecols=None, anal_type='count', anal_params={}):
+def proc_files(fpath_list, explog_data, filter_type=None, exclude_type=None, filter_axis=None, filter_name=None, rep_len=None, max_num=None, usecols=None, decimate=0, anal_type='count', anal_params={}):
     rep_count = None
     if rep_len is None:
         for test_len in range(6):
@@ -175,6 +203,8 @@ def proc_files(fpath_list, explog_data, filter_type=None, filter_axis=None, filt
             do_process = True
             if filter_type is not None:
                 do_process = (int(find_params['Type']) == filter_type)
+            if do_process and exclude_type is not None:
+                do_process = (int(find_params['Type']) != exclude_type)
             if do_process and filter_axis is not None:
                 do_process = (int(find_params['Axis']) == filter_axis)
             if do_process and filter_name is not None:
@@ -185,7 +215,7 @@ def proc_files(fpath_list, explog_data, filter_type=None, filter_axis=None, filt
                     if 'OSRparam_list' in anal_params:
                         anal_params['OSRparams'] = anal_params['OSRparam_list'][i]
                         logging.debug('OSRparams extracted from list: {0}'.format(anal_params['OSRparams']))
-                res.append(proc_file(fpath_list[i], explog_data, anal_type=anal_type, anal_params=anal_params, usecols=usecols, rep_len=rep_len))
+                res.append(proc_file(fpath_list[i], explog_data, anal_type=anal_type, anal_params=anal_params, usecols=usecols, decimate=decimate, rep_len=rep_len))
                 if max_num is not None:
                     if len(res) >= max_num:
                         logging.warn('[{0}/{1}] : reached limit ({2}) of files to be processed'.format(i, len(fpath_list), max_num))
@@ -196,6 +226,9 @@ def proc_files(fpath_list, explog_data, filter_type=None, filter_axis=None, filt
     #    res_arr = np.asarray(res)
     #    return res_arr
     if anal_type=='plot':
+        if 'return_data' in anal_params:
+            if anal_params['return_data']:
+                return res
         return fig
     elif anal_type=='count':
         return np.sum(res)
@@ -239,7 +272,7 @@ def proc_files(fpath_list, explog_data, filter_type=None, filter_axis=None, filt
         return res
     
 
-def BatchProcess(explog, filter_type=None, filter_axis=None, filter_name=None, rep_len=None, max_num=None, usecols=None, anal_type='read', anal_params={}):
+def BatchProcess(explog, filter_type=None, exclude_type=None, filter_axis=None, filter_name=None, rep_len=None, max_num=None, usecols=None, decimate=0, anal_type='read', anal_params={}):
     fpath_list = list(explog['FilePath'])
     if len(fpath_list) > 0:
-        return proc_files(fpath_list, explog, filter_type=filter_type, filter_axis=filter_axis, filter_name=filter_name, rep_len=rep_len, max_num=max_num, usecols=usecols, anal_type=anal_type, anal_params=anal_params)
+        return proc_files(fpath_list, explog, filter_type=filter_type, exclude_type=exclude_type, filter_axis=filter_axis, filter_name=filter_name, rep_len=rep_len, max_num=max_num, usecols=usecols, decimate=decimate, anal_type=anal_type, anal_params=anal_params)

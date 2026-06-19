@@ -171,7 +171,7 @@ class RheoProtocol():
                 logging.error('No expLog file found at path ' + str(fname))
         return self.explogdata
 
-    def ReadRheoData(self, row_index, usecols=(1,2,6), unpack=True, loadtxt_kwargs={}, Decimate=1):
+    def ReadRheoData(self, row_index, usecols=(1,2,6), unpack=True, loadtxt_kwargs={}, decimate=1):
         if self.explogdata is None:
             self.LoadExpLog()
         if self.explogdata is None:
@@ -179,18 +179,18 @@ class RheoProtocol():
         else:
             if row_index < len(self.explogdata):
                 if bool(self.explogdata['FilePath_exists'][row_index]):
-                    return iof.ReadRheoData(self.explogdata['FilePath'][row_index], usecols=usecols, unpack=unpack, Decimate=Decimate, **loadtxt_kwargs)
+                    return iof.ReadRheoData(self.explogdata['FilePath'][row_index], usecols=usecols, unpack=unpack, decimate=decimate, **loadtxt_kwargs)
                 else:
                     logging.error('Row index {0} of explog DataFrame has no valid FilePath associated ({1})'.format(row_index, self.explogdata['FilePath'][row_index]))
             else:
                 raise logging.error('Row index {0} out of bounds for explog DataFrame with {1} intervals'.format(row_index, len(self.explogdata)))
     
-    def ReadRheoData_Multi(self, row_list=None, append=True, usecols=(1,2,6), unpack=True, reset_time=True, loadtxt_kwargs={}, Decimate=1):
+    def ReadRheoData_Multi(self, row_list=None, name_contains=None, append=True, usecols=(1,2,6), unpack=True, reset_time=True, loadtxt_kwargs={}, decimate=1):
         if row_list is None:
             row_list = list(range(len(self.explogdata)))
         read_res = []
         for ridx in row_list:
-            read_res.append(self.ReadRheoData(row_index=ridx, usecols=usecols, unpack=True, loadtxt_kwargs=loadtxt_kwargs, Decimate=Decimate))
+            read_res.append(self.ReadRheoData(row_index=ridx, usecols=usecols, unpack=True, loadtxt_kwargs=loadtxt_kwargs, decimate=decimate))
         if len(read_res) > 0:
             if append:
                 res = read_res[0]

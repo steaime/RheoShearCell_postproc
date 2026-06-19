@@ -1,10 +1,11 @@
 import os
+import re
 import numpy as np
 import logging
 from RSCpp import SharedFunctions as sf
 
 
-def ReadRheoData(fname, usecols=(1,2,6), unpack=True, Decimate=1, **loadtxt_kwargs):
+def ReadRheoData(fname, usecols=(1,2,6), unpack=True, decimate=1, **loadtxt_kwargs):
     """Reads a text file with output of a rheology experiment
 
     Parameters
@@ -26,8 +27,8 @@ def ReadRheoData(fname, usecols=(1,2,6), unpack=True, Decimate=1, **loadtxt_kwar
             strlog += ' (unpack)'
         logging.debug(strlog)
         res = np.loadtxt(fname, delimiter='\t', usecols=usecols, unpack=unpack, **loadtxt_kwargs)
-        if Decimate>1:
-            return [sf.Decimate(arr, q=Decimate, q_meaning='resc_f')[1] for arr in res]
+        if decimate>1:
+            return [sf.Decimate(arr, q=decimate, q_meaning='resc_f')[1] for arr in res]
         else:
             return res
     else:
@@ -61,7 +62,8 @@ def find_file_params(fname, explog_data, rep_len=None):
     if rep_len is None:
         rep_len = 1
     cur_namebase, suffix = find_namebase(fname, ret_suffix=True, rep_len=rep_len)
-    find_params = explog_data[explog_data['Name'].str.contains(cur_namebase)]
+    logging.debug('find_params: filtering ExpLog data records where Name contains {0} and suffix is {1} (filename: {2})'.format(cur_namebase, suffix, fname))
+    find_params = explog_data[explog_data['Name'].str.contains(cur_namebase, regex=False)]
     if len(find_params)==1:
         return find_params.iloc[0]
     elif len(find_params)>0:
