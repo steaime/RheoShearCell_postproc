@@ -8,6 +8,7 @@ from RSCpp import IOfuncs as iof
 from RSCpp import SharedFunctions as sf
 
 def proc_file(fpath, explog_data, rep_len=None, anal_type='read', anal_params={}, usecols=None, decimate=0):
+    logging.debug('Now processing file ' + fpath)
     find_params = iof.find_file_params(fpath, explog_data, rep_len=rep_len)
     #logging.debug('proc_file procedure extracted parameters file {0}: {1}'.format(fpath, find_params))
     if find_params is not None:
@@ -196,6 +197,14 @@ def proc_files(fpath_list, explog_data, filter_type=None, exclude_type=None, fil
             anal_params['ax'] = ax
     for i in range(len(fpath_list)):
         cur_fname = fpath_list[i]
+        
+        
+        ### TODO:
+        # DETECT IF SUFFIX LIKE _1, _2, ... ARE PRESENT. ADAPT rep_len ACCORDINGLY
+        
+        
+        
+        
         find_params = iof.find_file_params(cur_fname, explog_data, rep_len=rep_len)
         if find_params is None:
             logging.debug('Skipping file {0}/{1}: no match found in parameter table for filename "{2}" (namebase: {3})'.format(i, len(fpath_list), cur_fname, iof.find_namebase(cur_fname, rep_len=rep_len)))

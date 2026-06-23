@@ -43,11 +43,18 @@ def find_namebase(fpath, ret_suffix=False, rep_len=None, ext_len=4):
         rep_len = 1
     cur_fname = os.path.basename(fpath)[:-ext_len]
     suff = ''
-    if cur_fname[-ext_len:] in ['_POS', '_NEG']:
-        suff = cur_fname[-4-rep_len:]
-        cur_fname = cur_fname[:-4]
-    else: 
-        suff = cur_fname[-rep_len:]
+    if rep_len == 0:
+        if cur_fname[-ext_len:] in ['_POS', '_NEG']:
+            suff = cur_fname[-4:]
+            cur_fname = cur_fname[:-4]
+        else: 
+            suff = ''
+    else:
+        if cur_fname[-ext_len:] in ['_POS', '_NEG']:
+            suff = cur_fname[-4-rep_len:]
+            cur_fname = cur_fname[:-4]
+        else: 
+            suff = cur_fname[-rep_len:]
     logging.debug('filename processed to return filename (without extension) "{0}", namebase "{1}", suffix "{2}" (rep_len=={3})'.format(os.path.basename(fpath)[:-ext_len], cur_fname, suff, rep_len))
     if rep_len==0:
         ret_name = cur_fname
