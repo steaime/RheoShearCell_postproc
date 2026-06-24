@@ -197,14 +197,6 @@ def proc_files(fpath_list, explog_data, filter_type=None, exclude_type=None, fil
             anal_params['ax'] = ax
     for i in range(len(fpath_list)):
         cur_fname = fpath_list[i]
-        
-        
-        ### TODO:
-        # DETECT IF SUFFIX LIKE _1, _2, ... ARE PRESENT. ADAPT rep_len ACCORDINGLY
-        
-        
-        
-        
         find_params = iof.find_file_params(cur_fname, explog_data, rep_len=rep_len)
         if find_params is None:
             logging.debug('Skipping file {0}/{1}: no match found in parameter table for filename "{2}" (namebase: {3})'.format(i, len(fpath_list), cur_fname, iof.find_namebase(cur_fname, rep_len=rep_len)))

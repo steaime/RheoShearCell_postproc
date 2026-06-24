@@ -2,6 +2,7 @@ import os
 import re
 import numpy as np
 import logging
+from pathlib import Path
 from RSCpp import SharedFunctions as sf
 
 
@@ -38,39 +39,46 @@ def ReadRheoData(fname, usecols=(1,2,6), unpack=True, decimate=1, **loadtxt_kwar
         else:
             return None
 
+def extract_suffix_info(filename):
+    stem = Path(filename).stem  # filename without extension
+
+    m = re.search(r'_(\d+)$', stem)
+    if not m:
+        return 0, 0
+
+    n = int(m.group(1))
+    suffix_length = len(m.group(0))  # includes the leading "_"
+
+    return n, suffix_length
+
 def find_namebase(fpath, ret_suffix=False, rep_len=None, ext_len=4):
     if rep_len is None:
         rep_len = 1
     cur_fname = os.path.basename(fpath)[:-ext_len]
-    suff = ''
-    if rep_len == 0:
-        if cur_fname[-ext_len:] in ['_POS', '_NEG']:
-            suff = cur_fname[-4:]
-            cur_fname = cur_fname[:-4]
-        else: 
+    nrep, suflen = extract_suffix_info(cur_fname)
+
+    if cur_fname[-4-suflen-rep_len:-suflen-rep_len] in ['_POS', '_NEG']:
+        suff = cur_fname[-4-suflen-rep_len:]
+        cur_fname = cur_fname[:-4-suflen-rep_len]
+    else: 
+        if rep_len+suflen == 0:
             suff = ''
-    else:
-        if cur_fname[-ext_len:] in ['_POS', '_NEG']:
-            suff = cur_fname[-4-rep_len:]
-            cur_fname = cur_fname[:-4]
-        else: 
-            suff = cur_fname[-rep_len:]
+        else:  
+            suff = cur_fname[-rep_len-suflen:]
+    
     logging.debug('filename processed to return filename (without extension) "{0}", namebase "{1}", suffix "{2}" (rep_len=={3})'.format(os.path.basename(fpath)[:-ext_len], cur_fname, suff, rep_len))
-    if rep_len==0:
-        ret_name = cur_fname
-    else:
-        ret_name = cur_fname[:-rep_len]
+
     if ret_suffix:
-        return ret_name, suff
+        return cur_fname, suff
     else:
-        return ret_name
+        return cur_fname
 
 def find_file_params(fname, explog_data, rep_len=None):
     if rep_len is None:
         rep_len = 1
     cur_namebase, suffix = find_namebase(fname, ret_suffix=True, rep_len=rep_len)
     logging.debug('find_params: filtering ExpLog data records where Name contains {0} and suffix is {1} (filename: {2})'.format(cur_namebase, suffix, fname))
-    find_params = explog_data[explog_data['Name'].str.contains(cur_namebase, regex=False)]
+    find_params = explog_data[explog_data['FilePath'] == fname]#.str.contains(cur_namebase, regex=False)]
     if len(find_params)==1:
         return find_params.iloc[0]
     elif len(find_params)>0:

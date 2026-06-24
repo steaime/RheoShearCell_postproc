@@ -159,6 +159,7 @@ class RheoProtocol():
                     logging.info('expLog file updated with ' + str(len(list_names)) + ' output file paths')
                     file_header.append('FilePath')
                     file_header.append('FilePath_exists')
+                    file_header.append('RepNum')
                     for i in range(len(res)):
                         if i < len(list_names):
                             res[i].append(list_names[i])
@@ -166,9 +167,18 @@ class RheoProtocol():
                         else:
                             res[i].append('')
                             res[i].append(False)
+                        if i == 0:
+                            res[i].append(0)
+                        else:
+                            if int(res[i][0]) >= int(res[i-1][0]):
+                                res[i].append(res[i-1][-1])
+                            else:
+                                res[i].append(res[i-1][-1]+1)
                 self.explogdata = pd.DataFrame(data=res, columns=file_header)
             else:
                 logging.error('No expLog file found at path ' + str(fname))
+        logging.info('RheoProtocol has ' + str(len(self.intervals)) + ' intervals and ' + str(len(self.explogdata)) + ' rows in expLog file')
+        logging.info('RheoProtocol was to be repeated ' + str(self.procRepTimes) + ' times. Repeat times extracted from expLog file: ' + str(np.max(self.explogdata['RepNum'])+1))
         return self.explogdata
 
     def ReadRheoData(self, row_index, usecols=(1,2,6), unpack=True, loadtxt_kwargs={}, decimate=1):
