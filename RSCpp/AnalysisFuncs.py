@@ -1,3 +1,4 @@
+import os
 import bisect
 import logging
 import numpy as np
@@ -20,17 +21,20 @@ def proc_file(fpath, explog_data, rep_len=None, anal_type='read', anal_params={}
             usecols=(1, cur_straincol, 6)
         if anal_type in ['read', 'plot', 'flowcurve', 'avgperiod']:
             t, strain, stress = iof.ReadRheoData(fpath, usecols=usecols, unpack=True, decimate=decimate)
+            if 'print_fnames' in anal_params:
+                if anal_params['print_fnames']:
+                    print(os.path.basename(fpath))
         if anal_type=='count':
             return 1
         elif anal_type=='read':
             return t, strain, stress
         elif anal_type=='plot':
             ax = anal_params['ax']
+            t_plot, strain_plot, stress_plot = t, strain, stress
             if 'plot_slice' in anal_params:
-                slc = slice(*anal_params['plot_slice'])
-                t_plot, strain_plot, stress_plot = t[slc], strain[slc], stress[slc]
-            else:
-                t_plot, strain_plot, stress_plot = t, strain, stress
+                if anal_params['plot_slice'] is not None:
+                    slc = slice(*anal_params['plot_slice'])
+                    t_plot, strain_plot, stress_plot = t[slc], strain[slc], stress[slc]
             if anal_params['plot_type'] == 'time':
                 if 'global_time' in anal_params:
                     if anal_params['global_time'] == 'auto':
@@ -38,9 +42,13 @@ def proc_file(fpath, explog_data, rep_len=None, anal_type='read', anal_params={}
                     t_off = anal_params['global_time']
                 else:
                     t_off = t[0]
-                plot_data = [(t_plot-t_off)/1000-anal_params['t0'], strain_plot, stress_plot]
-                ax[0].plot(plot_data[0], plot_data[1], anal_params['fmt'])
-                ax[1].plot(plot_data[0], plot_data[2], anal_params['fmt'])
+                if t_plot is not None and strain_plot is not None and stress_plot is not None:
+                    plot_data = [(t_plot-t_off)/1000-anal_params['t0'], strain_plot, stress_plot]
+                    ax[0].plot(plot_data[0], plot_data[1], anal_params['fmt'])
+                    ax[1].plot(plot_data[0], plot_data[2], anal_params['fmt'])
+                else:
+                    logging.warn('Error plotting content of file ' + fpath)
+                    plot_data = None
                 return plot_data
             elif anal_params['plot_type'] == 'stressstrain':
                 if 'stress_corr_spl' in anal_params:
@@ -211,7 +219,7 @@ def proc_files(fpath_list, explog_data, filter_type=None, exclude_type=None, fil
             if do_process and filter_name is not None:
                 do_process = (filter_name in find_params['Name'])
             if do_process:
-                logging.debug('Processing file {0}/{1}, of type {2} (fname: {3}). Analysis type: {4}'.format(i, len(fpath_list), find_params['Type'], cur_fname, anal_type))
+                logging.debug('Processing file {0}/{1}, of type {2} (Name: {3}; fname: {4}). Analysis type: {5}'.format(i, len(fpath_list), find_params['Type'], find_params['Name'], cur_fname, anal_type))
                 if anal_type=='OSR':
                     if 'OSRparam_list' in anal_params:
                         anal_params['OSRparams'] = anal_params['OSRparam_list'][i]

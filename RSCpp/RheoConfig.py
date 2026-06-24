@@ -154,6 +154,8 @@ class RheoProtocol():
                                 res.append(line.strip().split('\t'))
                             row_count += 1
                 logging.info(str(row_count-1) + ' rows read from expLog file ' + str(fname))
+                for i in range(len(res)):
+                    res[i][0] = int(res[i][0])
                 if load_fnames:
                     list_names = self.GetFullFilenames()
                     logging.info('expLog file updated with ' + str(len(list_names)) + ' output file paths')
