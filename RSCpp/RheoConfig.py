@@ -182,6 +182,17 @@ class RheoProtocol():
         logging.info('RheoProtocol has ' + str(len(self.intervals)) + ' intervals and ' + str(len(self.explogdata)) + ' rows in expLog file')
         logging.info('RheoProtocol was to be repeated ' + str(self.procRepTimes) + ' times. Repeat times extracted from expLog file: ' + str(np.max(self.explogdata['RepNum'])+1))
         return self.explogdata
+    
+    def PrintExpLogData(self, HTML=False, div_size=(800, 400)):
+        if self.explogdata is None:
+            self.LoadExpLog()
+        if self.explogdata is not None:
+            if HTML:
+                return "<div style='height: " + str(div_size[1]) + "px; width: " + str(div_size[0]) + "px; overflow: auto'>" + self.explogdata.to_html(index=False) + "</div>"
+            else:
+                return str(self.explogdata)
+        else:
+            logging.error('No explog DataFrame loaded') 
 
     def ReadRheoData(self, row_index, usecols=(1,2,6), unpack=True, loadtxt_kwargs={}, decimate=1):
         if self.explogdata is None:
